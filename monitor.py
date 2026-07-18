@@ -4,8 +4,6 @@ import urllib.request
 from playwright.sync_api import sync_playwright
 
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-
-# 前回「空室があったか・なかったか」だけを記録するファイル
 STATE_FILE = "jkk_state.json"
 
 def send_discord_notification(message):
@@ -24,27 +22,31 @@ def send_discord_notification(message):
         print(f"Discord通知エラー: {e}")
 
 def check_jkk():
-    # 大田区の検索結果ページ
-    target_url = "https://chintai.to-kousya.or.jp/search/result.php?ku%5B%5D=13111&sort=1&page=1"
+    # 教えていただいた正しい直リンクURL（トラッキングパラメータを除外）
+    target_url = "https://jhomes.to-kousya.or.jp/search/jkknet/service/akiyaJyokenDirect?sen_flg=1&jutaku_name=30B330FC30B730E330CF30A430E030CB30B730DE30B430E1"
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         
         try:
-            print(f"JKKサイト（大田区一覧）へアクセス中: {target_url}")
+            print(f"JKKサイトへアクセス中: {target_url}")
             page.goto(target_url, timeout=60000)
             
-            # 画面内の文字が読み込まれるまで5秒だけ待機
-            page.wait_for_timeout(5000)
+            # 【重要】ご指摘の「自動遷移」が完了するまで8秒間待機する
+            print("画面の自動遷移を待機しています...")
+            page.wait_for_timeout(8000)
+            print(f"遷移後のURL: {page.url}")
             
-            # ページ内にある「すべての文字」をごっそり取得
+            # ページ内のすべての文字を取得
             page_text = page.inner_text("body")
             
-            # 「コーシャハイム西馬込」という文字が含まれているかチェック（True か False）
-            is_vacant_now = "コーシャハイム西馬込" in page_text
+            # 空室がないときの特有のメッセージが含まれていないかチェック
+            is_empty_msg = "該当するあき家はありません" in page_text or "該当する物件はありません" in page_text or "該当する住宅はありません" in page_text
             
-            # 前回の状態を読み込む（5分ごとの連続通知スパムを防ぐため）
+            # 空室なしメッセージがない ＆ コーシャハイム西馬込の文字がある ＝ 空室あり！
+            is_vacant_now = not is_empty_msg and "コーシャハイム西馬込" in page_text
+            
             prev_state = False
             if os.path.exists(STATE_FILE):
                 try:
@@ -54,30 +56,24 @@ def check_jkk():
                 except Exception:
                     pass
             
-            # 判定ロジック
             if is_vacant_now and not prev_state:
-                # 前回は無くて、今回見つかった場合（新規出現）
                 msg = (
                     "🚨 【JKK空室速報】コーシャハイム西馬込が出ました！🚨\n"
-                    "大田区の検索結果に物件名が出現しました。面積・間取り問わず即確認してください！\n"
+                    "即確認してください！\n"
                     f"🔗 {target_url}"
                 )
                 send_discord_notification(msg)
                 print("【発見】空室を検知し、Discordへ通知しました。")
                 
             elif is_vacant_now and prev_state:
-                # 前回も見つかっていて、まだ空いている場合（通知スパム防止）
                 print("空室は継続中ですが、既に通知済みのためスキップします。")
                 
             elif not is_vacant_now and prev_state:
-                # 誰かに取られて空室が消滅した場合（状態リセット）
                 print("空室が埋まりました。監視状態をリセットします。")
                 
             else:
-                # ずっと空室がない場合（平常運転）
                 print("現在、コーシャハイム西馬込の空室はありません。監視を継続します。")
             
-            # 今回の結果を保存する
             with open(STATE_FILE, "w", encoding="utf-8") as f:
                 json.dump({"is_vacant": is_vacant_now}, f)
                 
