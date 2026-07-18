@@ -2,10 +2,11 @@ name: JKK Monitor
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # 世界標準時（UTC）の月曜〜土曜の 00:00 〜 09:00 まで5分おきに実行
+    # ⇒ 日本時間（JST）の月曜〜土曜の 09:00 〜 18:00 に完全に一致します
+    - cron: '*/5 0-9 * * 1-6'
   workflow_dispatch:
 
-# リポジトリに状態ファイル（jkk_state.json）を書き込むための権限
 permissions:
   contents: write
 
@@ -38,5 +39,4 @@ jobs:
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         git add jkk_state.json
-        # 状態に変更があった場合のみ、GitHub上に保存する
         git diff --quiet && git diff --staged --quiet || (git commit -m "Update state" && git push)
