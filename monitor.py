@@ -10,7 +10,11 @@ def send_discord_notification(message):
     if not WEBHOOK_URL:
         print("Webhook URLが設定されていません。")
         return
-    headers = {'Content-Type': 'application/json'}
+    # Discordのセキュリティ弾き（403）を回避するため、ブラウザに偽装する
+    headers = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    }
     data = json.dumps({"content": message}).encode("utf-8")
     req = urllib.request.Request(WEBHOOK_URL, data=data, headers=headers, method="POST")
     try:
