@@ -8,7 +8,7 @@ def check_jkk():
         page = browser.new_page()
         
         # JKKのサイトへアクセス（まずはアクセス制限の突破テスト）
-        target_url = "https://chintai.to-kousya.or.jp/"
+        target_url = "[https://www.to-kousya.or.jp/](https://www.to-kousya.or.jp/)"
         
         print(f"JKKサイトにアクセス中: {target_url}")
         try:
