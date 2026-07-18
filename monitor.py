@@ -3,14 +3,15 @@ import json
 import urllib.request
 from playwright.sync_api import sync_playwright
 
-# GitHubの金庫からURLを取り出す
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
+
+# 前回「空室があったか・なかったか」だけを記録するファイル
+STATE_FILE = "jkk_state.json"
 
 def send_discord_notification(message):
     if not WEBHOOK_URL:
         print("Webhook URLが設定されていません。")
         return
-    # Discordのセキュリティ弾き（403）を回避するため、ブラウザに偽装する
     headers = {
         'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
@@ -23,36 +24,65 @@ def send_discord_notification(message):
         print(f"Discord通知エラー: {e}")
 
 def check_jkk():
-    send_discord_notification("🚀 JKK監視システム：Discordへの通信テストを開始します。")
+    # 大田区の検索結果ページ
+    target_url = "https://chintai.to-kousya.or.jp/search/result.php?ku%5B%5D=13111&sort=1&page=1"
+    
     with sync_playwright() as p:
-        print("ブラウザを起動中...")
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         
-        target_url = "https://www.to-kousya.or.jp/"
-        print(f"JKKサイトにアクセス中: {target_url}")
-        
         try:
-            response = page.goto(target_url, timeout=30000)
-            print(f"ステータスコード: {response.status}")
+            print(f"JKKサイト（大田区一覧）へアクセス中: {target_url}")
+            page.goto(target_url, timeout=60000)
             
-            if response.status == 403:
-                msg = "🚨 【失敗】GitHubのIPがJKKのセキュリティに弾かれました（403 Forbidden）"
-                print(msg)
+            # 画面内の文字が読み込まれるまで5秒だけ待機
+            page.wait_for_timeout(5000)
+            
+            # ページ内にある「すべての文字」をごっそり取得
+            page_text = page.inner_text("body")
+            
+            # 「コーシャハイム西馬込」という文字が含まれているかチェック（True か False）
+            is_vacant_now = "コーシャハイム西馬込" in page_text
+            
+            # 前回の状態を読み込む（5分ごとの連続通知スパムを防ぐため）
+            prev_state = False
+            if os.path.exists(STATE_FILE):
+                try:
+                    with open(STATE_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        prev_state = data.get("is_vacant", False)
+                except Exception:
+                    pass
+            
+            # 判定ロジック
+            if is_vacant_now and not prev_state:
+                # 前回は無くて、今回見つかった場合（新規出現）
+                msg = (
+                    "🚨 【JKK空室速報】コーシャハイム西馬込が出ました！🚨\n"
+                    "大田区の検索結果に物件名が出現しました。面積・間取り問わず即確認してください！\n"
+                    f"🔗 {target_url}"
+                )
                 send_discord_notification(msg)
-            elif response.status == 200:
-                msg = "✅ 【成功】JKKサイトへのアクセスを突破しました！監視ロジックを続行できます。"
-                print(msg)
-                send_discord_notification(msg)
+                print("【発見】空室を検知し、Discordへ通知しました。")
+                
+            elif is_vacant_now and prev_state:
+                # 前回も見つかっていて、まだ空いている場合（通知スパム防止）
+                print("空室は継続中ですが、既に通知済みのためスキップします。")
+                
+            elif not is_vacant_now and prev_state:
+                # 誰かに取られて空室が消滅した場合（状態リセット）
+                print("空室が埋まりました。監視状態をリセットします。")
+                
             else:
-                msg = f"⚠️ 【不明】想定外のステータスです: {response.status}"
-                print(msg)
-                send_discord_notification(msg)
+                # ずっと空室がない場合（平常運転）
+                print("現在、コーシャハイム西馬込の空室はありません。監視を継続します。")
+            
+            # 今回の結果を保存する
+            with open(STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump({"is_vacant": is_vacant_now}, f)
                 
         except Exception as e:
-            error_msg = f"❌ エラーが発生しました: {e}"
-            print(error_msg)
-            send_discord_notification(error_msg)
+            print(f"監視中にエラーが発生しました: {e}")
         finally:
             browser.close()
 
