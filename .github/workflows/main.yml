@@ -2,8 +2,12 @@ name: JKK Monitor
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # 5分ごとに実行
-  workflow_dispatch: # 手動実行テスト用ボタン
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+# リポジトリに状態ファイル（jkk_state.json）を書き込むための権限
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -28,3 +32,11 @@ jobs:
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: python monitor.py
+
+    - name: 状態の保存（リポジトリへの自動上書き）
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add jkk_state.json
+        # 状態に変更があった場合のみ、GitHub上に保存する
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update state" && git push)
